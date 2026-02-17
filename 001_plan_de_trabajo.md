@@ -16,10 +16,10 @@
         - [ x ] La tabla `matches` guarda el resultado de cada comparación (`id_item_1`, `title_item_1`, `id_item_2`, `title_item_2`,`score`, `status`, `created_at`, `updated_at`).
         - [ x ] La tabla `matches_backup` sirve como archivo histórico de los matches procesados (`id_item_1`, `title_item_1`, `id_item_2`, `title_item_2`,`score`, `status`, `created_at`, `updated_at`) adicionando una columna `restored_at` indicando en el momento en el que se realiza el backup.
         - [ x ] El schema se documenta claramente en un archivo markdown y/o mediante un diagrama.
-- [ ] **Diseño de Arquitectura**: Elaborar un documento que detalle la arquitectura de 3 capas (API, Servicios, Persistencia) de la solución.
-    - [ ] **Criterios de Aceptación**:
-        - [ ] El documento explica claramente las responsabilidades de cada capa.
-        - [ ] Se define la estructura de directorios del proyecto.
+- [ x ] **Diseño de Arquitectura**: Elaborar un documento que detalle la arquitectura de 3 capas (API, Servicios, Persistencia) de la solución.
+    - [ x ] **Criterios de Aceptación**:
+        - [ x ] El documento explica claramente las responsabilidades de cada capa.
+        - [ x ] Se define la estructura de directorios del proyecto.
 
 
 ## Etapa 3: Implementación de la base de datos
