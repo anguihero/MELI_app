@@ -1,0 +1,40 @@
+# filepath: c:\Users\anmmu\OneDrive\Proyectos\999_Repositorios_Github\MELI_app\# Usar una imagen base de Python
+FROM python:3.11-slim
+
+# Establecer el directorio de trabajo
+WORKDIR /app
+
+# Instalar dependencias del sistema si fueran necesarias
+# RUN apt-get update && apt-get install -y ...
+
+# Copiar el archivo de dependencias e instalar paquetes
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar el código fuente de la aplicación
+COPY ./src .
+
+# Comando para ejecutar el script de inicialización de la BD
+CMD ["python", "models_sql.py"]
+
+# Usa una imagen base oficial de Python
+FROM python:3.11-slim
+
+# Establece el directorio de trabajo en el contenedor
+WORKDIR /app
+
+# Copia el archivo de dependencias
+COPY requirements.txt requirements.txt
+
+# Instala las dependencias
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copia el código de tu aplicación al contenedor
+COPY ./src ./src
+
+# Expone el puerto en el que se ejecutará la aplicación
+EXPOSE 8000
+
+# Comando para ejecutar la aplicación (asumiendo que usas FastAPI/Uvicorn)
+# Asegúrate de que 'src.main:app' coincida con cómo inicias tu servidor.
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
