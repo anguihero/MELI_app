@@ -6,7 +6,7 @@ from collections import Counter
 from typing import List, Dict, Any, Optional
 
 # --- 1. Framework Core & HTTP ---
-from fastapi import FastAPI, HTTPException, status, Path, Depends
+from fastapi import FastAPI, HTTPException, Query, status, Path, Depends
 
 # --- 2. Validación de Esquemas (Pydantic) ---
 from pydantic import BaseModel, Field
@@ -29,7 +29,7 @@ class StatusEnum(str, Enum):
 
 class ItemCreate(BaseModel):
     """Schema para la creación de un nuevo item."""
-    id: str = Field(..., description="Identificador único del producto.", example="MLA123456")
+    id: int = Field(..., description="Identificador único del producto.", example=123456)
     title: str = Field(..., description="Título del producto.", example="Celular Samsung Galaxy S23")
 
 class ItemResponse(ItemCreate):
@@ -43,15 +43,15 @@ class MatchCreate(BaseModel):
 
 class MatchCompare(BaseModel):
     """Schema para la comparación de dos items por sus IDs."""
-    id_a: str = Field(..., description="ID del primer item.", example="MLA123456")
-    id_b: str = Field(..., description="ID del segundo item.", example="MLA654321")
+    id_a: int = Field(..., description="ID del primer item.", example=123456)
+    id_b: int = Field(..., description="ID del segundo item.", example=654321)
 
 class MatchResponse(BaseModel):
     """Schema para la respuesta de un match."""
     id: int = Field(..., description="ID único del match.", example=101)
-    id_item_1: str = Field(..., description="ID del primer producto.", example="MLA123456")
+    id_item_1: str = Field(..., description="ID del primer producto.", example="123456")
     title_item_1: str = Field(..., description="Título del primer producto.", example="Celular Samsung Galaxy S23")
-    id_item_2: str = Field(..., description="ID del segundo producto.", example="MLA654321")
+    id_item_2: str = Field(..., description="ID del segundo producto.", example="654321")
     title_item_2: str = Field(..., description="Título del segundo producto.", example="Samsung S23 128GB")
     score: float = Field(..., description="Puntuación de similitud del match.", example=0.95)
     status: StatusEnum = Field(..., description="Estado del match.", example=StatusEnum.positivo)
@@ -59,34 +59,12 @@ class MatchResponse(BaseModel):
 class HealthResponse(BaseModel):
     """Schema para la respuesta del health check."""
     status: str = "ok"
+    message: Optional[str] = "Conectividad con la base de datos verificada exitosamente"
 
 # Definición del modelo de respuesta
 class TableHeaderResponse(BaseModel):
     table_name: str
     columns: list[str]
-
-# # Dependencia para obtener la sesión de DB (Configurar vía variables de entorno)
-# # El Hub central de infraestructura gestiona estas credenciales [cite: 52, 142]
-# DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/meli_app_db")
-# engine = create_engine(DATABASE_URL)
-# SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-# def get_db():
-#     db = Session(engine)
-#     try:
-#         yield db
-#     finally:
-#         db.close()
-
-# def init_db(database_url: str = None):
-#     url = database_url or os.getenv("DATABASE_URL", DATABASE_URL)
-#     engine = create_engine(url)
-#     db = next(get_db())
-#     return engine, db, get_db
-
-# engine, db, get_db = init_db()
-
 
 # 1. Configuración de la base de datos
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/meli_app_db")
@@ -507,7 +485,63 @@ def test_match_existence(ids: List[int], db: Session, threshold: float = 0.5, me
 
     return resultado
 
-
+def insert_item(db: Session, id_item: int, title: str):
+    """
+    Inserta un nuevo registro en la tabla 'items'.
+    
+    Args:
+        db: Sesión de SQLAlchemy para ejecutar queries
+        id_item: ID único del item a insertar
+        title: Título descriptivo del item
+    
+    Returns:
+        str: Mensaje indicando el resultado de la operación
+    
+    Raises:
+        SQLAlchemyError: Si falla la inserción en base de datos
+    """
+    
+    # verificar si ya existe el id_item y en caso de que si, no insertar y retornar mensaje de error
+    check_query = text("SELECT id FROM items WHERE id_item = :id_item")
+    existing_item = db.execute(check_query, {"id_item": str(id_item)}).fetchone()
+    if existing_item:
+        mensaje = f"❌ Item ya existe: id_item={id_item}, title='{title}' \n No se insertó el registro para evitar duplicados."
+        print(mensaje)
+        return mensaje
+    
+    # 2.4.6.1: Obtener el siguiente ID disponible
+    last_id_query = text("SELECT COALESCE(MAX(id), 0) as max_id FROM matches")
+    last_id_result = db.execute(last_id_query).fetchone()
+    new_id = last_id_result.max_id + 1
+    
+    # 2. GENERAR TIMESTAMP ACTUAL
+    current_timestamp = datetime.now().isoformat()
+    
+    # 3. INSERTAR REGISTRO EN TABLA ITEMS
+    insert_query = text("""
+        INSERT INTO items 
+        (id, id_item, title, created_at, updated_at) 
+        VALUES 
+        (:id, :id_item, :title, :created_at, :updated_at)
+    """)
+    
+    db.execute(
+        insert_query,
+        {
+            "id": new_id,
+            "id_item": str(id_item),
+            "title": title,
+            "created_at": current_timestamp,
+            "updated_at": current_timestamp
+        }
+    )
+    
+    # 4. CONFIRMAR TRANSACCIÓN
+    db.commit()
+    
+    mensaje = f"✅ Item insertado exitosamente: id={new_id}, id_item={id_item}, title='{title}'"
+    print(mensaje)
+    return mensaje
 
 # --- Aplicación FastAPI ---
 
@@ -515,31 +549,33 @@ app = FastAPI(
     title="MELI Challenge API",
     description=(
         "API para el Desafío de Desarrollo Op 2 - AA&ML de MercadoLibre.\n\n"
-        "Desarrollador: Andrés Muñoz\n"
-        "Propósito: Esta API fue creada con un toque lúdico y con el objetivo de demostrar suficiencia técnica en el desarrollo de microservicios, manejo de datos y diseño de APIs RESTful.\n\n"
-        "Descripción: La API está diseñada para resolver un desafío técnico de MercadoLibre, específicamente en el contexto de AA&ML (Aprendizaje Automático y Analítica Avanzada). Proporciona endpoints para la gestión de items, comparación de similitudes entre textos y productos, y operaciones relacionadas con la tabla de matches.\n\n"
-        "Características principales:\n"
-        "1. **Gestión de Items**:\n"
-        "   - Crear o actualizar registros de productos.\n"
-        "   - Validación de unicidad en los títulos de los productos.\n"
-        "2. **Comparación de Similitudes**:\n"
-        "   - Comparación de textos para calcular similitudes y generar matches.\n"
-        "   - Comparación de productos existentes por sus IDs.\n"
-        "3. **Operaciones sobre Matches**:\n"
-        "   - Recuperación de información de matches específicos.\n"
-        "   - Respaldo y reseteo de la tabla de matches.\n"
-        "4. **Salud y Metadatos**:\n"
-        "   - Verificación de la conectividad con la base de datos.\n"
-        "   - Obtención de nombres de columnas y muestras de datos de tablas específicas.\n"
-        "5. **Diseño Modular y Extensible**:\n"
-        "   - Uso de FastAPI para un desarrollo rápido y eficiente.\n"
-        "   - Modelos de datos definidos con Pydantic para validación robusta.\n"
-        "   - Enumeraciones para estados de matches, asegurando consistencia en los datos.\n\n"
-        "Notas adicionales:\n"
-        "- Este proyecto incluye lógica simulada (mock) para facilitar la demostración de funcionalidades en ausencia de una base de datos real.\n"
-        "- Cada endpoint está documentado con descripciones detalladas y ejemplos de uso.\n"
-        "- El código está diseñado para ser fácilmente extensible y adaptable a escenarios reales.\n\n"
-        "¡Bienvenido a este viaje técnico lleno de aprendizaje y diversión!"
+        "**Desarrollador:** https://github.com/anguihero & https://www.linkedin.com/in/amms1989/ \n\n"
+        "**Propósito:** Demostrar suficiencia técnica en desarrollo de microservicios, "
+        "manejo de datos y diseño de APIs RESTful.\n\n"
+        "## Descripción\n"
+        "API diseñada para resolver desafíos técnicos de MercadoLibre en el contexto de "
+        "Aprendizaje Automático y Analítica Avanzada. Proporciona endpoints para gestión "
+        "de items, comparación de similitudes y operaciones con matches.\n\n"
+        "## Características Principales\n\n"
+        "### 1. Gestión de Items\n"
+        "- Crear o actualizar registros de productos\n"
+        "- Validación de unicidad en títulos\n\n"
+        "### 2. Comparación de Similitudes\n"
+        "- Múltiples algoritmos: Levenshtein, SequenceMatcher, Jaccard, Cosine\n"
+        "- Comparación de textos arbitrarios\n"
+        "- Comparación de productos por IDs\n\n"
+        "### 3. Operaciones sobre Matches\n"
+        "- Recuperación de información de matches\n"
+        "- Respaldo y reseteo de la tabla de matches\n\n"
+        "### 4. Salud y Metadatos\n"
+        "- Verificación de conectividad con base de datos\n"
+        "- Obtención de esquemas de tablas\n"
+        "- Muestras de datos de tablas específicas\n\n"
+        "## Tecnologías\n"
+        "- **Framework:** FastAPI\n"
+        "- **Validación:** Pydantic\n"
+        "- **Base de datos:** PostgreSQL con SQLAlchemy\n"
+        "- **Algoritmos NLP:** Levenshtein, difflib, similitud de coseno\n"
     ),
     version="1.0.0",
 )
@@ -547,88 +583,219 @@ app = FastAPI(
 # --- Endpoints ---
 
 @app.get("/health", response_model=HealthResponse)
-async def health_check():
+async def health_check(db: Session = Depends(get_db)):
     """
     Verifica la conectividad con la base de datos.
     
     Retorna un status "ok" si la conexión es exitosa.
+    En caso de error, retorna un HTTPException con status 503 (Service Unavailable).
     """
-    # TODO: Implementar lógica de negocio
-    # 1. Intentar hacer una consulta simple a la DB (ej: `SELECT 1`).
-    # 2. Si falla, lanzar HTTPException 503 (Service Unavailable).
-    # 3. Si es exitosa, retornar el status "ok".
-    return HealthResponse(status="ok")
+    try:
+        # Intentar hacer una consulta simple a la BD
+        db.execute(text("SELECT 1"))
+        # Retornar respuesta exitosa con información de lo evaluado
+        return HealthResponse(
+            status="ok",
+            message="Conectividad con la base de datos verificada exitosamente"
+        )
+    except Exception as e:
+        # Si falla, lanzar HTTPException 503 (Service Unavailable)
+        print(f"❌ Error de conectividad con la BD: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Base de datos no disponible"
+        )
 
-@app.post("/items", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
-async def create_or_update_item(item: ItemCreate, db: Session = Depends(get_db)):
+@app.post("/matches/testing-text", response_model=MatchResponse, status_code=status.HTTP_201_CREATED)
+async def test_match_from_texts(
+    match_data: MatchCreate, 
+    UMBRAL: float = 0.5,
+    method: str = "levenshtein"
+):
     """
-    Crea un nuevo registro en la tabla 'items' o lo actualiza si ya existe.
-    
-    - **Valida** que el 'title' sea único en la base de datos.
-    - Si el `id` ya existe, se podría actualizar el `title` (lógica a definir).
-    """
-    # TODO: Implementar lógica de negocio
-    # 1. Conectar a la DB.
-    # 2. Verificar si el `title` ya existe para otro `id`. Si es así, lanzar HTTPException 409 (Conflict).
-    # 3. Usar un "upsert": si el `id` existe, actualizar; si no, crear.
-    print(f"Recibido item: {item.id} - {item.title}")
-    return ItemResponse(id=item.id, title=item.title)
+    Calcula la similitud entre dos textos sin consultar la API de Mercado Libre ni persistir en base de datos.
 
-@app.post("/matches", response_model=MatchResponse, status_code=status.HTTP_201_CREATED)
-async def create_match_from_texts(match_data: MatchCreate):
+    Esta función de prueba permite evaluar diferentes algoritmos de similitud entre dos textos arbitrarios.
+    Genera IDs ficticios para simular items, calcula el score de similitud usando el método especificado,
+    y retorna un objeto MatchResponse con el resultado del análisis.
+
+    Endpoint: POST /matches/testing-text
+
+    Method: Asíncrono
+        match_data (MatchCreate): Objeto que contiene los dos textos a comparar (text_1 y text_2).
+        UMBRAL (float, optional): Umbral de similitud para determinar si el match es positivo o negativo.
+            Si score >= UMBRAL, el estado será "positivo", caso contrario "negativo". Por defecto: 0.5.
+        method (str, optional): Método de similitud a utilizar. Opciones disponibles:
+            - "levenshtein": Distancia de Levenshtein normalizada
+            - "sequencematcher": SequenceMatcher de Python
+            - "jaccard": Similitud de Jaccard
+            - "cosine": Similitud de coseno
+            Por defecto: "levenshtein".
+
+    Returns:
+        MatchResponse: Objeto con los siguientes campos:
+            - id: ID único generado para el match
+            - id_item_1: ID ficticio del primer item
+            - title_item_1: Texto 1 proporcionado
+            - id_item_2: ID ficticio del segundo item
+            - title_item_2: Texto 2 proporcionado
+            - score: Puntuación de similitud calculada (0.0 - 1.0)
+            - status: Estado del match ("positivo" o "negativo")
+
+    Raises:
+        HTTPException: 
+            - 500 Internal Server Error: Si ocurre un error durante el cálculo de similitud.
+
+    Example:
+        ```python
+        match_data = MatchCreate(text_1="Smartphone Samsung", text_2="Celular Samsung")
+        result = await test_match_from_texts(match_data, UMBRAL=0.7, method="cosine")
+        # result.score -> 0.7
+        # result.status -> "positivo"
+        ```
+
+    Note:
+        - Esta función NO realiza llamadas a la API de Mercado Libre.
+        - Los resultados NO se persisten en la base de datos.
+        - Los IDs generados son ficticios y únicos basados en timestamp.
+        - Útil para testing y comparación de algoritmos de similitud.
     """
-    Recibe dos textos, calcula su similitud y persiste el resultado como un nuevo match.
-    
-    - La lógica de cálculo de similitud no se implementa aquí.
-    - Se asume que los items correspondientes a los textos no existen previamente.
-    """
-    # TODO: Implementar lógica de negocio
-    # 1. Calcular el `score` de similitud entre `text_1` y `text_2`.
-    # 2. Crear dos nuevos `items` en la DB con los títulos proporcionados.
-    # 3. Crear un nuevo `match` en la DB con los IDs de los nuevos items y el score.
-    # 4. Retornar el match creado.
-    print(f"Comparando textos: '{match_data.text_1}' vs '{match_data.text_2}'")
-    return MatchResponse(
-        id=1,
-        id_item_1="MLA_NEW_1", title_item_1=match_data.text_1,
-        id_item_2="MLA_NEW_2", title_item_2=match_data.text_2,
-        score=0.88, # Score de ejemplo
-        status=StatusEnum.en_progreso
-    )
+    try:
+        # Generar IDs ficticios para los items
+        item1_id = f"MLA_TEXT_{int(datetime.now().timestamp())}_1"
+        item2_id = f"MLA_TEXT_{int(datetime.now().timestamp())}_2"
+        
+        # Calcular similitud usando algoritmo seleccionado
+        score = SimilarityService.calculate_similarity(
+            match_data.text_1, 
+            match_data.text_2, 
+            method=method
+        )
+        
+        # Generar timestamp actual
+        current_date = datetime.now().isoformat()
+        
+        # Determinar estado basado en threshold (0.85)
+        match_status = "positivo" if score >= UMBRAL else "negativo"
+        
+        # Generar ID ficticio para el match
+        new_match_id = int(datetime.now().timestamp() * 1000) % 999999
+        
+        return MatchResponse(
+            id=new_match_id,
+            id_item_1=item1_id,
+            title_item_1=match_data.text_1,
+            id_item_2=item2_id,
+            title_item_2=match_data.text_2,
+            score=score,
+            status=match_status
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al calcular similitud: {str(e)}"
+        )
 
 
-@app.get("/matches/{match_id}", response_model=MatchResponse)
-async def get_match_by_id(match_id: int = Path(..., description="ID único del match a recuperar.")):
+@app.post("/matches/compare-by-ids")
+async def compare_items_by_ids(id_a: int, id_b: int, UMBRAL: float = 0.5, db: Session = Depends(get_db)):
     """
-    Recupera la información de un match específico por su ID.
+    Compara dos items por sus IDs y determina si son duplicados.
+    Este endpoint permite comparar dos items existentes en la base de datos utilizando
+    sus IDs. Evalúa si existe un match entre ellos usando el método SequenceMatcher
+    con un umbral de similitud seleccionado.
+
+    Comportamiento:
+        - Si ya existe un match POSITIVO entre los IDs, retorna el resultado existente
+        - Si el match existe con otro estado, lo recalcula y actualiza
+        - Si no existe match, crea uno nuevo
+
+    Endpoint:
+        POST /matches/compare-by-ids (o similar) - verifica con la configuración de rutas
+
+    Args:
+        id_a (int): ID del primer item a comparar
+        id_b (int): ID del segundo item a comparar
+        db (Session, optional): Sesión de base de datos inyectada por dependencia
+
+    Returns:
+        dict: Resultado del análisis de match con información de similitud y estado
+
+    Raises:
+        HTTPException(400): Si los IDs son inválidos o no existen en la base de datos
+        HTTPException(500): Si ocurre un error interno durante el procesamiento
+
+    Example:
+        ```
+        POST /matches/compare-by-ids?id_a=123&id_b=456
+
+        Response:
+        {
+            "mensaje": {
+                "ids_consultados": [
+                123456789,
+                123456
+                ],
+                "match_encontrado": "Sí",
+                "estado_match_encontrado": "POSITIVO",
+                "accion_recomendada": "✅ MATCH POSITIVO ENCONTRADO\n                → Retornar resultado existente   \n            Score: 1.0 | Creado: 2026-02-18 21:55:14.036671+00:00"
+            },
+            "resultado": {
+                "id_item_1": "123456",
+                "title_item_1": "Celular Samsung Galaxy S23",
+                "id_item_2": "123456789",
+                "title_item_2": "Celular Samsung Galaxy S23",
+                "score": 1,
+                "status": "positivo",
+                "created_at": "2026-02-18T21:55:14.036671+00:00",
+                "updated_at": "2026-02-18T21:55:14.036671+00:00"
+            }
+            }
+        ```
     """
-    # TODO: Implementar lógica de negocio
-    # 1. Buscar el match en la DB por `match_id`.
-    # 2. Si no se encuentra, lanzar HTTPException 404 (Not Found).
-    # 3. Retornar los datos del match.
-    print(f"Buscando match con ID: {match_id}")
-    if match_id == 999: # Simulación de no encontrado
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match no encontrado.")
-    
-    return MatchResponse(
-        id=match_id,
-        id_item_1="MLA123456", title_item_1="Celular Samsung Galaxy S23",
-        id_item_2="MLA654321", title_item_2="Samsung S23 128GB",
-        score=0.95,
-        status=StatusEnum.positivo
-    )
+    try:
+        resultado = test_match_existence([id_a, id_b], db, threshold=UMBRAL, metodo_seleccionado="sequencematcher")
+        return resultado
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @app.get("/tables/{table_name}/colnames", response_model=TableHeaderResponse)
 async def get_table_header(table_name: str, db: Session = Depends(get_db)) -> TableHeaderResponse:
     """
-    Obtiene los nombres de las columnas (cabecera) de una tabla específica.
+    Obtiene los nombres de las columnas (cabecera) de una tabla específica de la base de datos.
+
+    Este endpoint realiza introspección en la base de datos para extraer los metadatos
+    de una tabla y retornar la lista de nombres de sus columnas.
+
+    Args:
+        table_name (str): Nombre de la tabla de la cual se desea obtener la cabecera.
+        db (Session, optional): Sesión de base de datos inyectada mediante Depends(get_db).
+
+    Returns:
+        TableHeaderResponse: Objeto que contiene el nombre de la tabla y la lista de columnas.
+            - table_name (str): Nombre de la tabla consultada.
+            - columns (List[str]): Lista con los nombres de todas las columnas de la tabla.
+
+    Raises:
+        HTTPException: 
+            - 404 NOT_FOUND: Si la tabla especificada no existe en el esquema de la base de datos.
+            - 500 INTERNAL_SERVER_ERROR: Si ocurre un error inesperado durante la introspección
+              o consulta de metadatos (ej: pérdida de conexión, error de base de datos).
+
+    Endpoint:
+        GET /tables/{table_name}/header
+
+
+    Process:
+        1. Conecta al motor de base de datos y crea un inspector.
+        2. Valida la existencia de la tabla en el esquema.
+        3. Realiza introspección para obtener los metadatos de las columnas.
+        4. Extrae y retorna los nombres de las columnas.
     """
-    # TODO: Implementar lógica de negocio
-    # 1. Conectar a la DB.
-    # 2. Usar introspección de SQLAlchemy o una consulta SQL para obtener las columnas.
-    # 3. Validar que la tabla exista. Si no, HTTPException 404.
-    # 4. Retornar la lista de columnas.
+
     print(f"Obteniendo cabecera de la tabla: {table_name}")
     
     try:
@@ -639,7 +806,7 @@ async def get_table_header(table_name: str, db: Session = Depends(get_db)) -> Ta
             # No se atrapará en el bloque 'except Exception' de abajo si usamos el orden correcto
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, 
-                detail=f"La tabla '{table_name}' no existe en el esquema actual de la SIC."
+                detail=f"La tabla '{table_name}' no existe en el esquema actual"
             )
 
         # 2. Introspección de metadatos
@@ -664,19 +831,56 @@ async def get_table_header(table_name: str, db: Session = Depends(get_db)) -> Ta
             detail="Error interno al procesar metadatos de la tabla."
         )
 
-
 @app.get("/tables/{table_name}/header", response_model=List[Dict[str, Any]])
 async def get_table_sample(
     table_name: str = Path(..., description="Nombre de la tabla a consultar."),
-    db: Session = Depends(get_db) # Inyección automática por FastAPI [cite: 591]
+    rows: int = Query(3, description="Número de filas a retornar como muestra.", ge=1, le=100),
+    db: Session = Depends(get_db)
 ):
     """
-    Obtiene una muestra de 3 filas. 
-    Arquitectura: MVC (Controlador)[cite: 926, 974].
-    Seguridad: Ejecución en clúster privado AKS[cite: 97, 272].
+    Endpoint GET para obtener una muestra de registros de una tabla específica.
+
+    Este endpoint recupera un número limitado de filas de una tabla de base de datos,
+    ordenadas por fecha de modificación descendente (si existe la columna 'updated_at').
+
+    **Endpoint:** GET /tables/{table_name}/sample
+
+    **Parámetros:**
+        - table_name (str): Nombre de la tabla a consultar (parámetro de ruta).
+        - rows (int): Número de filas a retornar (query parameter, rango: 1-100, default: 3).
+        - db (Session): Sesión de base de datos inyectada automáticamente.
+
+    **Respuestas:**
+        - 200 OK: Lista de diccionarios con los registros de la tabla.
+        - 404 NOT FOUND: La tabla especificada no existe en el esquema.
+        - 500 INTERNAL SERVER ERROR: Error de conexión o ejecución en la base de datos.
+
+    **Retorna:**
+        List[Dict]: Lista de diccionarios donde cada elemento representa una fila de la tabla,
+                    con las claves correspondientes a los nombres de columnas.
+
+    **Comportamiento:**
+        1. Valida la existencia de la tabla mediante inspección del esquema.
+        2. Verifica si existe la columna 'updated_at' para aplicar ordenamiento descendente.
+        3. Ejecuta consulta parametrizada para prevenir inyección SQL.
+        4. Convierte los resultados a formato JSON serializable.
+
+    **Arquitectura:**
+        - Patrón: MVC (Controlador)
+        - Seguridad: Ejecución en clúster privado AKS, consultas parametrizadas.
+        - Validación: Inspección de esquema antes de ejecutar consultas dinámicas.
+
+    **Ejemplo de uso:**
+        GET /tables/usuarios/sample?rows=5
+
+    **Ejemplo de respuesta:**
+        [
+            {"id": 123, "nombre": "Juan", "updated_at": "2024-01-15T10:30:00"},
+            {"id": 122, "nombre": "María", "updated_at": "2024-01-14T15:20:00"}
+        ]
     """
     try:
-        # Validación vía inspección (Arquitectura de Seguridad) [cite: 88, 527]
+        # Validación vía inspección (Arquitectura de Seguridad)
         inspector = inspect(engine)
         if not inspector.has_table(table_name):
             raise HTTPException(
@@ -684,56 +888,159 @@ async def get_table_sample(
                 detail=f"Tabla '{table_name}' no encontrada en el esquema."
             )
 
-        # Consulta segura con SQLAlchemy Core [cite: 391, 650]
-        query = text(f"SELECT * FROM {table_name} LIMIT 3")
+        # Verificar si la tabla tiene columna 'updated_at' para ordenar
+        columns = inspector.get_columns(table_name)
+        column_names = [col['name'] for col in columns]
         
-        # 'db' debe ser una instancia de sqlalchemy.orm.Session
-        result = db.execute(query)
+        # Construir query con ORDER BY dinámico
+        if 'updated_at' in column_names:
+            query = text(f"SELECT * FROM {table_name} ORDER BY updated_at DESC LIMIT :limit")
+        else:
+            query = text(f"SELECT * FROM {table_name} LIMIT :limit")
         
-        # Mapeo a diccionario para respuesta JSON [cite: 973, 987]
+        # Ejecutar consulta con parámetro seguro
+        result = db.execute(query, {"limit": rows})
+        
+        # Mapeo a diccionario para respuesta JSON
         return [dict(row._mapping) for row in result]
 
     except HTTPException as http_exc:
         raise http_exc
 
     except Exception as e:
-        # Registro detallado en carpeta logs/ [cite: 91, 604]
         print(f"ERROR DE INFRAESTRUCTURA DB: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Fallo en la conexión con la base de datos institucional."
         )
 
-@app.post("/matches/backup-and-reset", response_model=BackupResponse)
-async def backup_and_reset_matches():
-    """
-    Realiza un backup de la tabla 'matches' y luego la vacía.
-    
-    - Mueve todos los datos de la tabla `matches` a `matches_backup`.
-    - Elimina todos los registros de la tabla `matches`.
-    """
-    # TODO: Implementar lógica de negocio
-    # 1. Iniciar una transacción.
-    # 2. Copiar todos los datos de `matches` a `matches_backup`.
-    # 3. Eliminar todos los datos de `matches`.
-    # 4. Hacer commit de la transacción.
-    # 5. Retornar el número de registros movidos.
-    print("Iniciando proceso de backup y reseteo de matches.")
-    return BackupResponse(message="Backup completado y tabla 'matches' reseteada.", records_moved=150)
 
-@app.post("/matches/compare-by-ids")
-async def compare_items_by_ids(id_a: int, id_b: int, db: Session = Depends(get_db)):
+@app.post("/tables/add-items", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
+async def create_or_update_item(item: ItemCreate, db: Session = Depends(get_db)):
     """
-    Compara dos items existentes por sus IDs y utiliza test_match_existence para evaluar el match.
-    
-    - Si ya existe un match **POSITIVO** entre los IDs, no se hace nada.
-    - Si el match existe pero con otro estado, se recalcula y actualiza.
-    - Si no existe, se crea uno nuevo.
+    Endpoint para crear o actualizar un ítem en la base de datos.
+    Este endpoint recibe los datos de un ítem y realiza las siguientes operaciones:
+        - Valida que el ID sea un número entero válido
+        - Verifica que el título sea único en la base de datos
+        - Inserta un nuevo registro o actualiza uno existente según el ID proporcionado
+
+    Args:
+        item (ItemCreate): Objeto que contiene los datos del ítem a crear/actualizar.
+            - id (str): Identificador único del ítem (será convertido a entero)
+            - title (str): Título del ítem (debe ser único)
+        db (Session, optional): Sesión de base de datos inyectada por dependencia.
+
+    Returns:
+        ItemResponse: Objeto con la información del ítem procesado y un mensaje de confirmación.
+            - id (str): ID del ítem procesado
+            - title (str): Título del ítem procesado
+            - message (str): Mensaje indicando si fue creado o actualizado
+
+    Raises:
+        HTTPException 400: Si el ID proporcionado no es un número entero válido.
+        HTTPException 500: Si ocurre un error durante la operación de base de datos.
+
+    Example:
+        ```json
+        POST /items
+        {
+            "id": "123",
+            "title": "Ejemplo de producto"
+        }
+        ```
     """
     try:
-        resultado = test_match_existence([id_a, id_b], db, threshold=0.85, metodo_seleccionado="sequencematcher")
-        return resultado
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        # Convertir el id de string a integer
+        item_id = int(item.id)
+        
+        # Usar la función insert_item para insertar/validar el item
+        mensaje = insert_item(db, item_id, item.title)
+        
+        return ItemResponse(id=item.id, title=item.title, message=mensaje)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El ID debe ser un número entero válido"
+        )
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al insertar item: {str(e)}"
+        )
+
+@app.post("/tables/matches/backup-and-reset", response_model=BackupResponse)
+async def backup_and_reset_table_matches(db: Session = Depends(get_db)):
+
+    """
+    Realiza un backup completo de la tabla 'matches' y la resetea.
+
+    Esta función de endpoint ejecuta las siguientes operaciones en orden:
+
+    1. Cuenta los registros existentes en la tabla 'matches'
+    2. Copia todos los registros de 'matches' a 'matches_backup'
+    3. Elimina todos los registros de la tabla 'matches'
+    4. Confirma la transacción si todo es exitoso
+
+    Endpoint: POST /backup-and-reset-matches
+    Args:
+        db (Session, optional): Sesión de base de datos inyectada mediante Depends(get_db).
+
+    Returns:
+        BackupResponse: Objeto con el mensaje de éxito y la cantidad de registros movidos.
+            - message (str): Mensaje descriptivo del resultado de la operación
+            - records_moved (int): Número de registros transferidos a matches_backup
+
+    Raises:
+        HTTPException: 
+            - status_code 500: Error interno durante el proceso de backup o reseteo.
+              Incluye el detalle del error en el mensaje.
+
+    Notes:
+        - Si la tabla 'matches' está vacía, retorna inmediatamente sin realizar operaciones
+        - Utiliza transacciones para garantizar la consistencia de datos
+        - En caso de error, ejecuta rollback automático
+        - Los estados de 'status' se convierten al tipo enum 'match_backup_status_enum'
+    """
+    try:
+        # 1. Contar registros antes del backup
+        count_query = text("SELECT COUNT(*) as total FROM matches")
+        count_result = db.execute(count_query).fetchone()
+        records_to_backup = count_result.total if count_result else 0
+        
+        if records_to_backup == 0:
+            return BackupResponse(
+                message="✅ No hay registros para hacer backup. La tabla 'matches' está vacía.",
+                records_moved=0
+            )
+        
+        # 2. Copiar todos los datos de 'matches' a 'matches_backup'
+        copy_query = text("""
+            INSERT INTO matches_backup 
+            (id, id_item_1, title_item_1, id_item_2, title_item_2, score, status, created_at, updated_at)
+            SELECT id, id_item_1, title_item_1, id_item_2, title_item_2, score, status::text::match_backup_status_enum, created_at, updated_at 
+            FROM matches
+        """)
+        db.execute(copy_query)
+        
+        # 3. Eliminar todos los registros de 'matches'
+        delete_query = text("DELETE FROM matches")
+        db.execute(delete_query)
+        
+        # 4. Hacer commit de la transacción
+        db.commit()
+        
+        print(f"✅ Backup completado exitosamente: {records_to_backup} registros movidos a 'matches_backup'")
+        print(f"✅ Tabla 'matches' vaciada correctamente")
+        
+        return BackupResponse(
+            message=f"✅ Backup completado y tabla 'matches' reseteada exitosamente. {records_to_backup} registros fueron movidos a 'matches_backup'.",
+            records_moved=records_to_backup
+        )
+        
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Error durante el backup y reseteo: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al realizar backup y reseteo: {str(e)}"
+        )

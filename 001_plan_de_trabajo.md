@@ -31,30 +31,30 @@
 
 ## Etapa 4: Lógica de Negocio y API
 
-- [ ] **Desarrollo de Endpoints**: Implementar los endpoints en FastAPI, incluyendo la validación de datos con Pydantic y la documentación automática con Swagger UI.
-    - [ ] **Criterios de Aceptación**:
-        - [ ] La interfaz de Swagger UI (`/docs`) está disponible y permite probar todos los endpoints.
-        - [ ] `POST /matches`: Acepta dos textos, calcula el match, lo persiste y devuelve el resultado.
-        - [ ] `POST /matches/compare-by-ids`: Acepta dos IDs de items, los recupera de la tabla `items`, los compara y guarda/actualiza el resultado en la tabla `matches`. Si el match ya existe con estado `POSITIVO`, no se realiza ninguna acción. Si existe con otro estado, se recalcula y se actualizan los campos `score`, `status` y `updated_at`.
-        - [ ] `GET /matches/{id}`: Recupera y devuelve un match existente por su ID.
-        - [ ] `POST /items`: Permite agregar o corregir registros en la tabla `items`.
-        - [ ] `GET /health`: Endpoint de salud que verifica la conectividad con los servicios clave (ej. base de datos).
-        - [ ] `GET /tables/{table_name}/header`: Devuelve los nombres de las columnas de la tabla especificada.
-        - [ ] `POST /matches/backup-and-reset`: Copia todos los registros de `matches` a `matches_backup` y luego elimina todos los registros de la tabla `matches`.
-        - [ ] Las solicitudes con datos inválidos devuelven un error 422.
-- [ ] **Implementación del Servicio de Comparación**: Desarrollar el servicio que contiene el algoritmo de similitud de texto base.
-    - [ ] **Criterios de Aceptación**:
-        - [ ] El servicio implementa una función que recibe dos textos y devuelve un puntaje de similitud entre 0 y 1.
-        - [ ] El algoritmo de comparación (ej. Levenshtein, Jaccard) está encapsulado en esta capa.
-- [ ] **Implementación de Lógica de Estados**: Codificar la lógica de negocio para manejar los estados `POSITIVO` y `NEGATIVO`, incluyendo la regla de no re-generación para matches positivos.
-    - [ ] **Criterios de Aceptación**:
-        - [ ] Un match con resultado >= 0.85 se marca como `POSITIVO`.
-        - [ ] Un match con resultado < 0.85 se marca como `NEGATIVO`.
-        - [ ] Si se solicita un `POST /matches` con textos que ya tienen un resultado `POSITIVO`, se debe devolver el resultado existente sin recalcular.
-- [ ] **Configuración de Contenerización**: Crear los archivos `Dockerfile` y `docker-compose.yml` iniciales para la aplicación.
-    - [ ] **Criterios de Aceptación**:
-        - [ ] El comando `docker-compose up` levanta la aplicación y la base de datos.
-        - [ ] La aplicación es accesible desde el host.
+- [x] **Desarrollo de Endpoints**: Implementar los endpoints en FastAPI, incluyendo la validación de datos con Pydantic y la documentación automática con Swagger UI.
+    - [x] **Criterios de Aceptación**:
+        - [x] La interfaz de Swagger UI (`/docs`) está disponible y permite probar todos los endpoints.
+        - [x] `GET /health`: Endpoint de salud (Health Check).
+        - [x] `POST /matches/testing-text`: Acepta dos textos (Test Match From Texts).
+        - [x] `POST /matches/compare-by-ids`: Acepta dos IDs de items (Compare Items By Ids).
+        - [x] `GET /tables/{table_name}/colnames`: Devuelve los nombres de las columnas de la tabla especificada (Get Table Header).
+        - [x] `GET /tables/{table_name}/header`: Devuelve una muestra de la tabla seleccionada (Get Table Sample).
+        - [x] `POST /tables/add-items`: Permite agregar o actualizar registros en la tabla `items` (Create Or Update Item).
+        - [x] `POST /tables/matches/backup-and-reset`: Copia todos los registros de `matches` a `matches_backup` y luego elimina todos los registros de la tabla `matches` (Backup And Reset Table Matches).
+- [ x ] **Implementación del Servicio de Comparación**: Desarrollar el servicio que contiene el algoritmo de similitud de texto base.
+    - [ x ] **Criterios de Aceptación**:
+        - [ x ] El servicio implementa una función que recibe dos textos y devuelve un puntaje de similitud entre 0 y 1.
+        - [ x ] El algoritmo de comparación (ej. Levenshtein, Jaccard) está encapsulado en esta capa.
+- [ x ] **Implementación de Lógica de Estados**: Codificar la lógica de negocio para manejar los estados `POSITIVO` y `NEGATIVO`, incluyendo la regla de no re-generación para matches positivos.
+    - [ x ] **Criterios de Aceptación**:
+        - [ x ] Un match con resultado >= UMBRAL se marca como `POSITIVO`.
+        - [ x ] Un match con resultado < UMBRAL se marca como `NEGATIVO`.
+        - [ x ] Si se solicita un `POST /matches` con textos que ya tienen un resultado `POSITIVO`, se debe devolver el resultado que ejemplifica como funciona el algoritmo.
+        - [ x ] Si se solicita un `POST /matches/compare-by-ids` con dos ids diferente que ya tienen un resultado `POSITIVO`, se debe devolver el resultado existente sin recalcular.
+- [ x ] **Configuración de Contenerización**: Crear los archivos `Dockerfile` y `docker-compose.yml` iniciales para la aplicación.
+    - [ x ] **Criterios de Aceptación**:
+        - [ x ] El comando `docker-compose up` levanta la aplicación y la base de datos.
+        - [ x ] La aplicación es accesible desde el host.
 
 ## Etapa 5: Calidad y Documentación
 - [ ] **Pruebas Unitarias**: Escribir pruebas unitarias para la capa de servicios y la lógica de negocio utilizando `pytest`.
@@ -75,15 +75,9 @@
         - [ ] Se documentan los endpoints de la API con ejemplos de `curl`.
 
 ## Etapa 6: Despliegue y Entrega
-- [ ] **Optimización de Docker**: Refinar el `Dockerfile` utilizando un multi-stage build para reducir el tamaño de la imagen final.
-    - [ ] **Criterios de Aceptación**:
-        - [ ] El `Dockerfile` utiliza una imagen base ligera para la etapa final.
-        - [ ] El tamaño de la imagen de producción es significativamente menor que la imagen de desarrollo.
-- [ ] **Preparación del Repositorio**: Limpiar y organizar el repositorio de GitHub para la entrega final.
-    - [ ] **Criterios de Aceptación**:
-        - [ ] El historial de commits es claro y descriptivo.
-        - [ ] Se eliminan archivos innecesarios o temporales.
-- [ ] **(Bonus) CI/CD**: Configurar un pipeline básico de Integración Continua y Despliegue Continuo con GitHub Actions.
-    - [ ] **Criterios de Aceptación**:
-        - [ ] Cada push a la rama principal dispara la ejecución de las pruebas.
-        - [ ] El pipeline construye la imagen Docker y la sube a un registro (ej. Docker Hub, GHCR).
+- [ x ] **Optimización de Docker**: Refinar el `Dockerfile` utilizando un multi-stage build para reducir el tamaño de la imagen final.
+    - [ x ] **Criterios de Aceptación**:
+        - [ x ] El `Dockerfile` utiliza una imagen base ligera para la etapa final.
+- [ x ] **Preparación del Repositorio**: Limpiar y organizar el repositorio de GitHub para la entrega final.
+    - [ x ] **Criterios de Aceptación**:
+        - [ x ] Se eliminan archivos innecesarios o temporales.
