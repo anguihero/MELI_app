@@ -28,6 +28,9 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres_db:5432/${POSTGRES_DB}"
+      SQLITE_MIGRATION_PATH: "/app/sqlite_migration/database.db"
+    volumes:
+      - ./db:/app/sqlite_migration:ro
 
   orchestrator:
     build:
