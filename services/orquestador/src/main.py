@@ -968,79 +968,79 @@ async def create_or_update_item(item: ItemCreate, db: Session = Depends(get_db))
             detail=f"Error al insertar item: {str(e)}"
         )
 
-@app.post("/tables/matches/backup-and-reset", response_model=BackupResponse)
-async def backup_and_reset_table_matches(db: Session = Depends(get_db)):
+# @app.post("/tables/matches/backup-and-reset", response_model=BackupResponse)
+# async def backup_and_reset_table_matches(db: Session = Depends(get_db)):
 
-    """
-    Realiza un backup completo de la tabla 'matches' y la resetea.
+#     """
+#     Realiza un backup completo de la tabla 'matches' y la resetea.
 
-    Esta función de endpoint ejecuta las siguientes operaciones en orden:
+#     Esta función de endpoint ejecuta las siguientes operaciones en orden:
 
-    1. Cuenta los registros existentes en la tabla 'matches'
-    2. Copia todos los registros de 'matches' a 'matches_backup'
-    3. Elimina todos los registros de la tabla 'matches'
-    4. Confirma la transacción si todo es exitoso
+#     1. Cuenta los registros existentes en la tabla 'matches'
+#     2. Copia todos los registros de 'matches' a 'matches_backup'
+#     3. Elimina todos los registros de la tabla 'matches'
+#     4. Confirma la transacción si todo es exitoso
 
-    Endpoint: POST /backup-and-reset-matches
-    Args:
-        db (Session, optional): Sesión de base de datos inyectada mediante Depends(get_db).
+#     Endpoint: POST /backup-and-reset-matches
+#     Args:
+#         db (Session, optional): Sesión de base de datos inyectada mediante Depends(get_db).
 
-    Returns:
-        BackupResponse: Objeto con el mensaje de éxito y la cantidad de registros movidos.
-            - message (str): Mensaje descriptivo del resultado de la operación
-            - records_moved (int): Número de registros transferidos a matches_backup
+#     Returns:
+#         BackupResponse: Objeto con el mensaje de éxito y la cantidad de registros movidos.
+#             - message (str): Mensaje descriptivo del resultado de la operación
+#             - records_moved (int): Número de registros transferidos a matches_backup
 
-    Raises:
-        HTTPException: 
-            - status_code 500: Error interno durante el proceso de backup o reseteo.
-              Incluye el detalle del error en el mensaje.
+#     Raises:
+#         HTTPException: 
+#             - status_code 500: Error interno durante el proceso de backup o reseteo.
+#               Incluye el detalle del error en el mensaje.
 
-    Notes:
-        - Si la tabla 'matches' está vacía, retorna inmediatamente sin realizar operaciones
-        - Utiliza transacciones para garantizar la consistencia de datos
-        - En caso de error, ejecuta rollback automático
-        - Los estados de 'status' se convierten al tipo enum 'match_backup_status_enum'
-    """
-    try:
-        # 1. Contar registros antes del backup
-        count_query = text("SELECT COUNT(*) as total FROM matches")
-        count_result = db.execute(count_query).fetchone()
-        records_to_backup = count_result.total if count_result else 0
+#     Notes:
+#         - Si la tabla 'matches' está vacía, retorna inmediatamente sin realizar operaciones
+#         - Utiliza transacciones para garantizar la consistencia de datos
+#         - En caso de error, ejecuta rollback automático
+#         - Los estados de 'status' se convierten al tipo enum 'match_backup_status_enum'
+#     """
+#     try:
+#         # 1. Contar registros antes del backup
+#         count_query = text("SELECT COUNT(*) as total FROM matches")
+#         count_result = db.execute(count_query).fetchone()
+#         records_to_backup = count_result.total if count_result else 0
         
-        if records_to_backup == 0:
-            return BackupResponse(
-                message="✅ No hay registros para hacer backup. La tabla 'matches' está vacía.",
-                records_moved=0
-            )
+#         if records_to_backup == 0:
+#             return BackupResponse(
+#                 message="✅ No hay registros para hacer backup. La tabla 'matches' está vacía.",
+#                 records_moved=0
+#             )
         
-        # 2. Copiar todos los datos de 'matches' a 'matches_backup'
-        copy_query = text("""
-            INSERT INTO matches_backup 
-            (id, id_item_1, title_item_1, id_item_2, title_item_2, score, status, created_at, updated_at)
-            SELECT id, id_item_1, title_item_1, id_item_2, title_item_2, score, status::text::match_backup_status_enum, created_at, updated_at 
-            FROM matches
-        """)
-        db.execute(copy_query)
+#         # 2. Copiar todos los datos de 'matches' a 'matches_backup'
+#         copy_query = text("""
+#             INSERT INTO matches_backup 
+#             (id, id_item_1, title_item_1, id_item_2, title_item_2, score, status, created_at, updated_at)
+#             SELECT id, id_item_1, title_item_1, id_item_2, title_item_2, score, status::text::match_backup_status_enum, created_at, updated_at 
+#             FROM matches
+#         """)
+#         db.execute(copy_query)
         
-        # 3. Eliminar todos los registros de 'matches'
-        delete_query = text("DELETE FROM matches")
-        db.execute(delete_query)
+#         # 3. Eliminar todos los registros de 'matches'
+#         delete_query = text("DELETE FROM matches")
+#         db.execute(delete_query)
         
-        # 4. Hacer commit de la transacción
-        db.commit()
+#         # 4. Hacer commit de la transacción
+#         db.commit()
         
-        print(f"✅ Backup completado exitosamente: {records_to_backup} registros movidos a 'matches_backup'")
-        print(f"✅ Tabla 'matches' vaciada correctamente")
+#         print(f"✅ Backup completado exitosamente: {records_to_backup} registros movidos a 'matches_backup'")
+#         print(f"✅ Tabla 'matches' vaciada correctamente")
         
-        return BackupResponse(
-            message=f"✅ Backup completado y tabla 'matches' reseteada exitosamente. {records_to_backup} registros fueron movidos a 'matches_backup'.",
-            records_moved=records_to_backup
-        )
+#         return BackupResponse(
+#             message=f"✅ Backup completado y tabla 'matches' reseteada exitosamente. {records_to_backup} registros fueron movidos a 'matches_backup'.",
+#             records_moved=records_to_backup
+#         )
         
-    except Exception as e:
-        db.rollback()
-        print(f"❌ Error durante el backup y reseteo: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al realizar backup y reseteo: {str(e)}"
-        )
+#     except Exception as e:
+#         db.rollback()
+#         print(f"❌ Error durante el backup y reseteo: {str(e)}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Error al realizar backup y reseteo: {str(e)}"
+#         )
