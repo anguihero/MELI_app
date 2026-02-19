@@ -57,22 +57,25 @@
         - [x] La aplicación es accesible desde el host.
 
 ## Etapa 5: Calidad y Documentación
-- [ ] **Pruebas Unitarias**: Escribir pruebas unitarias para la capa de servicios y la lógica de negocio utilizando `pytest`.
-    - [ ] **Criterios de Aceptación**:
-        - [ ] La cobertura de pruebas para la capa de servicios es superior al 80%.
-        - [ ] Se prueban casos borde para el algoritmo de similitud.
-- [ ] **Pruebas de Integración**: Desarrollar pruebas de integración para los endpoints de la API utilizando `pytest` y `httpx`.
-    - [ ] **Criterios de Aceptación**:
-        - [ ] Se prueba el flujo completo de creación y consulta de un match.
-        - [ ] Se validan los códigos de estado y las respuestas de la API para casos exitosos y de error.
-- [ ] **Configuración de Logging**: Implementar un sistema de logs para registrar eventos importantes y errores de la aplicación.
-    - [ ] **Criterios de Aceptación**:
-        - [ ] Las solicitudes a la API y los errores internos se registran en la salida estándar o en un archivo.
-        - [ ] Los logs incluyen información útil como timestamp, nivel de severidad y mensaje.
-- [ ] **Documentación Técnica**: Redactar un `README.md` completo con instrucciones de instalación, configuración y uso de la API.
-    - [ ] **Criterios de Aceptación**:
-        - [ ] El `README.md` incluye cómo levantar el proyecto con Docker.
-        - [ ] Se documentan los endpoints de la API con ejemplos de `curl`.
+- [x] **Pruebas Unitarias**: Escribir pruebas unitarias para la capa de servicios y la lógica de negocio.
+    - [x] **Criterios de Aceptación**:
+        - [x] La cobertura de pruebas para la capa de servicios es superior al 80%.
+        - [x] Se prueban casos borde para el algoritmo de similitud.
+        - [x] 11/11 pruebas unitarias ejecutadas satisfactoriamente (GET /health, POST /matches/testing-text, POST /matches/compare-by-ids, POST /tables/add-items).
+- [x] **Pruebas de Integración**: Desarrollar pruebas de integración para los endpoints de la API.
+    - [x] **Criterios de Aceptación**:
+        - [x] Se prueba el flujo completo de creación y consulta de un match.
+        - [x] Se validan los códigos de estado y las respuestas de la API para casos exitosos y de error.
+        - [x] Flujo E2E completo validado: inserción de items → comparación → persistencia en BD (21 registros confirmados).
+- [x] **Configuración de Logging**: Implementar un sistema de logs para registrar eventos importantes y errores de la aplicación.
+    - [x] **Criterios de Aceptación**:
+        - [x] Las solicitudes a la API y los errores internos se registran en la salida estándar o en un archivo.
+        - [x] Los logs incluyen información útil como timestamp, nivel de severidad y mensaje.
+- [x] **Documentación Técnica**: Redactar un `README.md` completo con instrucciones de instalación, configuración y uso de la API.
+    - [x] **Criterios de Aceptación**:
+        - [x] El `README.md` incluye cómo levantar el proyecto con Docker.
+        - [x] Se documentan los endpoints de la API con ejemplos de `curl`.
+
 
 ## Etapa 6: Despliegue y Entrega
 - [x] **Optimización de Docker**: Refinar el `Dockerfile` utilizando un multi-stage build para reducir el tamaño de la imagen final.

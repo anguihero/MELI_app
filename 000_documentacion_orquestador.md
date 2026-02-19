@@ -4,8 +4,8 @@
 
 Módulo principal de la API FastAPI para el Desafío de Desarrollo Op 2 - AA&ML de MercadoLibre. Proporciona endpoints RESTful para gestión de items, comparación de similitudes entre textos y productos, y operaciones sobre matches.
 
-- **Autor:** Andrés Muñoz
-- **Versión:** 1.0.0
+- **Autor:** https://github.com/anguihero & https://www.linkedin.com/in/amms1989/
+- **Versión:** 2.0.0
 - **Fecha:** 2026/2/17
 
 ---
