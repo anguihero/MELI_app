@@ -79,8 +79,6 @@ El notebook de pruebas se encuentra en el directorio del proyecto y proporciona:
 
 ### Referencia
 Para entender completamente las capacidades y el uso correcto de la aplicación MELI, se recomienda revisar y ejecutar el notebook de pruebas incluido en este repositorio.
-# revisión de pruebas en notebook test
-
 
 ---
 
