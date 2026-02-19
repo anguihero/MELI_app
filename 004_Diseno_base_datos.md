@@ -10,6 +10,7 @@ El diseño de la base de datos tiene como objetivo garantizar la escalabilidad y
 | Columna     | Tipo          | Constraints                | Descripción                          |
 |-------------|---------------|----------------------------|--------------------------------------|
 | id          | String        | PK                         | Identificador único del producto.   |
+| id_item     | String        | NOT NULL, FK -> items.id   | Id único del producto.          |
 | title       | String        | UNIQUE, NOT NULL           | Título único del producto.          |
 | created_at  | DateTime(tz)  | NOT NULL, default now()    | Fecha de creación del registro.     |
 | updated_at  | DateTime(tz)  | NOT NULL, default now(), on update now() | Fecha de última actualización. |

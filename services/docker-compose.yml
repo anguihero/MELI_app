@@ -13,16 +13,39 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data/
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   db_init:
-    build:
-      context: ./services/db
+    build: 
+      context: ./db
     container_name: meli_db_init
-    restart: on-failure
     depends_on:
-      - postgres_db
+      postgres_db:
+        condition: service_healthy
     environment:
       DATABASE_URL: "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres_db:5432/${POSTGRES_DB}"
+      SQLITE_MIGRATION_PATH: "/app/sqlite_migration/database.db"
+    volumes:
+      - ./db:/app/sqlite_migration:ro
+
+  orchestrator:
+    build:
+      context: ./orquestador
+    container_name: meli_orchestrator
+    restart: always
+    # depends_on:
+    #   postgres_db:
+    #     condition: service_healthy
+    #   db_init:
+    #     condition: service_completed_successfully
+    environment:
+      DATABASE_URL: "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres_db:5432/${POSTGRES_DB}"
+    ports:
+      - "8000:8000"
 
 volumes:
   postgres_data:
