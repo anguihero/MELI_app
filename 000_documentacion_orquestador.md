@@ -2,45 +2,42 @@
 
 ## Descripción General
 
-Módulo principal de la API FastAPI para el Desafío de Desarrollo Op 2 - AA&ML de MercadoLibre. Proporciona endpoints RESTful para gestión de items, comparación de similitudes entre textos y productos, y operaciones sobre matches.
+Módulo principal de la API FastAPI para el Desafío de Desarrollo Op 2 - AA&ML de MercadoLibre. Proporciona endpoints RESTful para gestión de items, comparación de similitudes entre textos y productos, y operaciones sobre matches con múltiples algoritmos de NLP.
 
 - **Autor:** https://github.com/anguihero & https://www.linkedin.com/in/amms1989/
-- **Versión:** 2.0.0
-- **Fecha:** 2026/2/17
+- **Versión:** 2.1.0
+- **Fecha:** 2026/2/18
 
 ---
 
 ## Sección 1: Importaciones y Dependencias
 
-### FastAPI Core
+### Framework Core
 - **FastAPI:** Framework web para construir APIs REST asincrónicas
-- **HTTPException:** Clase para lanzar excepciones HTTP con códigos de estado
-- **status:** Módulo con constantes de códigos de estado HTTP (201, 404, 500, etc)
-- **Path:** Parámetro de ruta que permite validar y documentar rutas dinámicas
-- **Depends:** Sistema de inyección de dependencias para reutilizar lógica
+- **HTTPException, status:** Excepciones HTTP y códigos de estado
+- **Path, Query, Depends:** Validación de parámetros e inyección de dependencias
 
-### Pydantic Models
-- **BaseModel:** Clase base para definir schemas de validación de datos con tipos
-- **Field:** Función para documentar campos de modelos con descripciones y ejemplos
-- **Enum:** Clase para definir enumeraciones de valores discretos y válidos
+### Pydantic & Validación
+- **BaseModel, Field:** Schemas de validación de datos con tipos y documentación
+- **Enum:** Enumeraciones para valores discretos (StatusEnum)
 
 ### Type Hints
-- **List:** Para anotaciones de tipo de listas genéricas
-- **Dict:** Para anotaciones de tipo de diccionarios genéricos
-- **Any:** Para anotaciones de tipo sin restricciones específicas
+- **List, Dict, Any, Optional:** Anotaciones de tipo genéricas
 
-### SQLAlchemy Database
-- **create_engine:** Constructor de motores de conexión a bases de datos
-- **text:** Constructor para consultas SQL con escaping automático
-- **inspect:** Herramienta para introspección de metadatos de BD (tablas, columnas)
-- **Session:** Contexto de sesión para operaciones transaccionales en la BD
+### Base de Datos (SQLAlchemy)
+- **create_engine:** Constructor de motores de conexión a PostgreSQL
+- **text, inspect:** Consultas SQL parametrizadas e introspección de metadatos
+- **Session, sessionmaker:** Contexto de sesiones transaccionales
 
-### Excepciones Database
-- **NoSuchTableError:** Excepción lanzada cuando se intenta acceder a tabla inexistente
-    > **Nota:** Se importa pero no se utiliza directamente; considerar remover o usar en validaciones
+### Algoritmos de Similitud NLP
+- **Levenshtein:** Distancia de edición (edit distance)
+- **SequenceMatcher (difflib):** Algoritmo Gestalt Pattern Matching
+- **Counter (collections):** Contador de tokens para similitud de coseno
+- **sqrt (math):** Cálculo de normas vectoriales
 
-### Utilities
-- **os:** Módulo para acceder a variables de entorno del sistema operativo
+### Utilidades
+- **os:** Acceso a variables de entorno del sistema
+- **datetime:** Generación de timestamps ISO 8601
 
 ---
 
@@ -49,411 +46,341 @@ Módulo principal de la API FastAPI para el Desafío de Desarrollo Op 2 - AA&ML 
 ### StatusEnum
 
 ```python
-class StatusEnum(str, Enum)
+class StatusEnum(str, Enum):
+    positivo = "positivo"
+    en_progreso = "en progreso"
+    negativo = "negativo"
 ```
 
-Enumeración que define los estados válidos de un match en el sistema.
+Enumeración que define estados válidos de match en el sistema.
 
-**Herencia doble:**
-- `str`: Representa el enum como string serializable en JSON
-- `Enum`: Proporciona funcionalidad estándar de enumeración Python
+**Valores:**
+- `"positivo"`: Match confirmado como similar (score >= threshold)
+- `"en progreso"`: Match bajo evaluación/pendiente
+- `"negativo"`: Match confirmado como no similar (score < threshold)
 
-**Valores válidos:**
-- `"positivo"`: Match confirmado como positivo/similar
-- `"en progreso"`: Match bajo evaluación/pendiente de confirmación
-- `"negativo"`: Match confirmado como negativo/no similar
-
-**Propósito:** Garantiza consistencia de datos y previene valores inválidos en BD
+**Propósito:** Garantizar consistencia de datos y validar estados en BD
 
 ---
 
 ## Sección 3: Modelos Pydantic (Schemas de Validación)
 
 ### ItemCreate
-
 ```python
-class ItemCreate(BaseModel)
+class ItemCreate(BaseModel):
+    id: int = Field(..., description="Identificador único del producto")
+    title: str = Field(..., description="Título del producto")
 ```
-
-Schema para validar datos de entrada al crear un nuevo item/producto.
-
-**Atributos:**
-- `id` (str): Identificador único del producto en MercadoLibre (ej: MLA123456)
-- `title` (str): Título o nombre descriptivo del producto
-
-**Propósito:** Validar estructura de datos antes de procesar en endpoints POST
+Schema para validar entrada al crear items. Convertible a entero.
 
 ### ItemResponse
-
 ```python
-class ItemResponse(ItemCreate)
+class ItemResponse(ItemCreate):
+    message: str = "Item creado/actualizado correctamente."
 ```
-
-Schema para respuesta al crear/actualizar un item exitosamente.
-
-**Hereda de:** ItemCreate
-
-**Atributos adicionales:**
-- `message` (str): Confirmación de operación ("Item creado/actualizado correctamente.")
-
-**Propósito:** Respuesta consistente y confirmación de operación al cliente
+Respuesta con confirmación de operación.
 
 ### MatchCreate
-
 ```python
-class MatchCreate(BaseModel)
+class MatchCreate(BaseModel):
+    text_1: str = Field(..., description="Primer texto a comparar")
+    text_2: str = Field(..., description="Segundo texto a comparar")
 ```
-
-Schema para validar datos de entrada al crear match desde dos textos.
-
-**Atributos:**
-- `text_1` (str): Primer texto a comparar (puede ser título de producto)
-- `text_2` (str): Segundo texto a comparar (puede ser título de producto)
-
-**Propósito:** Entrada para endpoint de comparación de textos sin IDs previos
+Input para comparación de dos textos arbitrarios.
 
 ### MatchCompare
-
 ```python
-class MatchCompare(BaseModel)
+class MatchCompare(BaseModel):
+    id_a: int = Field(..., description="ID del primer item")
+    id_b: int = Field(..., description="ID del segundo item")
 ```
-
-Schema para validar datos de entrada al comparar dos items existentes.
-
-**Atributos:**
-- `id_a` (str): Identificador del primer producto en BD
-- `id_b` (str): Identificador del segundo producto en BD
-
-**Propósito:** Entrada para endpoint que compara productos ya presentes en BD
+Input para comparación de items existentes por ID.
 
 ### MatchResponse
-
 ```python
-class MatchResponse(BaseModel)
+class MatchResponse(BaseModel):
+    id: int
+    id_item_1: str
+    title_item_1: str
+    id_item_2: str
+    title_item_2: str
+    score: float  # Rango [0.0, 1.0]
+    status: StatusEnum
 ```
-
-Schema para respuesta al retrieval o creación de un match.
-
-**Atributos:**
-- `id` (int): Identificador único del match en tabla matches
-- `id_item_1` (str): ID del primer producto relacionado
-- `title_item_1` (str): Título del primer producto
-- `id_item_2` (str): ID del segundo producto relacionado
-- `title_item_2` (str): Título del segundo producto
-- `score` (float): Puntuación de similitud: rango [0.0, 1.0] (ej: 0.95 = 95%)
-- `status` (StatusEnum): Estado actual del match (positivo/en_progreso/negativo)
-
-**Propósito:** Respuesta estándar del sistema para queries sobre matches
+Respuesta estándar para queries sobre matches.
 
 ### HealthResponse
-
 ```python
-class HealthResponse(BaseModel)
+class HealthResponse(BaseModel):
+    status: str = "ok"
+    message: Optional[str] = "Conectividad verificada exitosamente"
 ```
-
-Schema para respuesta del endpoint de health check.
-
-**Atributos:**
-- `status` (str): Indica salud del sistema ("ok" = operativo)
-
-**Propósito:** Respuesta simple para validar disponibilidad de API
+Respuesta simple de health check.
 
 ### TableHeaderResponse
-
 ```python
-class TableHeaderResponse(BaseModel)
+class TableHeaderResponse(BaseModel):
+    table_name: str
+    columns: list[str]
 ```
-
-Schema para respuesta de consulta de metadata de tablas.
-
-**Atributos:**
-- `table_name` (str): Nombre de la tabla consultada en BD
-- `columns` (list[str]): Lista de nombres de columnas de la tabla
-
-**Propósito:** Introspección de estructura de BD sin exponerla completamente
+Respuesta de introspección de metadatos de tabla.
 
 ### BackupResponse
-
 ```python
-class BackupResponse(BaseModel)
+class BackupResponse(BaseModel):
+    message: str
+    records_moved: int
 ```
-
-Schema para respuesta de operación de backup y reset de matches.
-
-**Atributos:**
-- `message` (str): Descripción de operación realizada
-- `records_moved` (int): Cantidad de registros transferidos a backup
-
-**Propósito:** Confirmación y auditoría de operaciones destructivas (datos movidos)
+Confirmación de operación de backup con cantidad de registros.
 
 ---
 
 ## Sección 4: Configuración de Base de Datos
 
 ### DATABASE_URL
-
-Variable de entorno con cadena de conexión a PostgreSQL.
-
-**Estructura:** `postgresql://[usuario]:[contraseña]@[host]:[puerto]/[base_datos]`
-
-**Propósito:** Conectar con BD de producción; credenciales gestionadas por Hub central de infraestructura (evitar hardcoding en código)
-
-**Valor por defecto:** BD local en localhost (desarrollo/testing)
-
-**Nota de seguridad:** En producción, NUNCA hardcodear credenciales
+```python
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/meli_app_db")
+```
+Cadena de conexión a PostgreSQL desde variables de entorno.
 
 ### engine
+Motor SQLAlchemy que gestiona pool de conexiones (5 por defecto, +10 overflow).
 
-Motor SQLAlchemy que gestiona pool de conexiones con BD.
-
-**Propósito:**
-- Pool de conexiones reutilizables (mejora rendimiento)
-- Traducción de consultas SQL a dialecto específico (PostgreSQL)
-- Introspección de metadatos (tablas, columnas, índices)
-
-**Configuración implícita:**
-- pool_size = 5 conexiones por defecto
-- max_overflow = 10 conexiones adicionales bajo carga
+### SessionLocal
+```python
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+```
+Factory de sesiones para BD.
 
 ### get_db()
-
 ```python
-def get_db()
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 ```
+Generador que proporciona sesiones reutilizables como dependencias (context manager pattern).
 
-Generador (generator) que proporciona sesión de BD como dependencia inyectable.
-
-**Flujo:**
-1. `yield db`: Proporciona sesión abierta al endpoint
-2. Endpoint procesa solicitud usando 'db'
-3. `finally db.close()`: Cierra sesión automáticamente (cleanup)
-
-**Patrón:** Context Manager pattern en FastAPI (Depends)
-
-**Beneficios:**
-- Sesiones cerradas automáticamente (evita memory leaks)
-- Reutilizable en cualquier endpoint vía `Depends(get_db)`
-- Desacoplamiento entre lógica de negocio y gestión de BD
+### init_db()
+```python
+def init_db(database_url: str = None):
+    target_url = database_url or DATABASE_URL
+    _engine = create_engine(target_url)
+    _SessionLocal = sessionmaker(bind=_engine)
+    _db = _SessionLocal()
+    return _engine, _db
+```
+Función de inicialización que evita shadowing de variables globales.
 
 ---
 
-## Sección 5: Instanciación de Aplicación FastAPI
+## Sección 5: Servicio de Similitud (SimilarityService)
 
-### app
+Clase con métodos estáticos para calcular similitud entre textos usando 4 algoritmos diferentes.
 
-```python
-app = FastAPI(...)
+### calculate_similarity_Levenshtein()
+Distancia de edición normalizada. Métrica: 1 - (distancia / max_len)
+
+### calculate_similarity_SequenceMatcher()
+Patrón Gestalt de difflib. Ratio de coincidencia directa.
+
+### calculate_similarity_Jaccard()
+Similitud sobre términos tokenizados: |A ∩ B| / |A ∪ B|
+
+### calculate_similarity_Cosine()
+Similitud de coseno con frecuencia de tokens y filtro de stopwords:
+```
+cos(A,B) = (A·B) / (||A|| × ||B||)
 ```
 
-Crea instancia principal de aplicación FastAPI con configuración.
+### calculate_similarity()
+Dispatcher que selecciona algoritmo según parámetro `method`.
+
+---
+
+## Sección 6: Función test_match_existence()
+
+Núcleo de lógica de matching. Evalúa existencia y calcula similitud entre dos items.
+
+**Flujo Principal:**
+
+1. **Validación:** Verifica IDs diferentes y existencia en BD
+2. **Búsqueda Bidireccional:** Consulta matches previos (ambas direcciones)
+3. **Evaluación de Estado:**
+   - Si match POSITIVO → Retorna resultado sin recalcular
+   - Si match NEGATIVO → Recalcula y actualiza
+   - Si no existe → Calcula y crea nuevo
+4. **Persistencia:** Inserta/actualiza registros con timestamps ISO
+5. **Respuesta Estructurada:** Mensaje y resultado con metadatos
 
 **Parámetros:**
-- `title`: Título de API (visible en documentación Swagger)
-- `description`: Descripción larga con contexto del proyecto
-- `version`: Versionado semántico (MAJOR.MINOR.PATCH)
+- `ids`: Lista [id_a, id_b]
+- `db`: Sesión SQLAlchemy
+- `threshold`: Umbral para estado positivo (default 0.5)
+- `metodo_seleccionado`: Algoritmo NLP (default "sequencematcher")
 
-**Propósito:**
-- Punto de entrada para servidor ASGI (Uvicorn, Gunicorn)
-- Genera documentación interactiva (Swagger UI, ReDoc)
-- Registra todos los endpoints (decoradores @app.get/@app.post)
-
-**URL de documentación automática:**
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-- OpenAPI JSON: `http://localhost:8000/openapi.json`
+**Retorna:**
+```python
+{
+    "mensaje": {...},
+    "resultado": {...}
+}
+```
 
 ---
 
-## Sección 6: Endpoints (Rutas HTTP)
+## Sección 7: Función insert_item()
+
+```python
+def insert_item(db: Session, id_item: int, title: str) -> str
+```
+
+Inserta nuevo item en tabla `items`. Valida no-duplicados antes de insertar.
+
+**Retorna:** Mensaje de confirmación o error.
+
+---
+
+## Sección 8: Instanciación de FastAPI
+
+```python
+app = FastAPI(
+    title="MELI Challenge API",
+    description="...",
+    version="1.0.0"
+)
+```
+
+Crea instancia con documentación automática en `/docs` y `/redoc`.
+
+---
+
+## Sección 9: Endpoints (Rutas HTTP)
 
 ### GET /health
-
 ```python
-async def health_check()
+async def health_check(db: Session = Depends(get_db)) -> HealthResponse
 ```
 
-**Propósito:** Verificar disponibilidad y conectividad con BD
+**Propósito:** Verificar disponibilidad de API y BD.
 
-**Implementación esperada:**
-1. Ejecutar consulta trivial en BD (SELECT 1 FROM dual)
-2. Si falla → HTTPException(503 Service Unavailable)
-3. Si éxito → Retornar HealthResponse(status="ok")
+**Implementación:**
+- Ejecuta `SELECT 1` en BD
+- Si falla → HTTPException(503 Service Unavailable)
+- Si éxito → HealthResponse(status="ok")
 
-**Uso:** Health checks en orquestadores (Kubernetes) y load balancers
-
-**Respuesta exitosa (200 OK):**
+**Respuesta (200 OK):**
 ```json
 {
-    "status": "ok"
+    "status": "ok",
+    "message": "Conectividad con la base de datos verificada exitosamente"
 }
 ```
 
-### POST /items
-
+### POST /matches/testing-text
 ```python
-async def create_or_update_item(item: ItemCreate, db: Session = Depends(get_db))
+async def test_match_from_texts(
+    match_data: MatchCreate,
+    UMBRAL: float = 0.5,
+    method: str = "levenshtein"
+) -> MatchResponse
 ```
 
-**Propósito:** Crear nuevo producto o actualizar existente (upsert)
+**Propósito:** Comparar dos textos SIN persistir en BD (testing).
 
-**Validaciones esperadas:**
-1. Validar que 'title' sea único en BD (no duplicados para diferente 'id')
-2. Si violación de unicidad → HTTPException(409 Conflict)
-3. Si 'id' existe → Actualizar campo 'title'
-4. Si 'id' no existe → Crear nuevo registro
+**Comportamiento:**
+- Genera IDs ficticios basados en timestamp
+- Calcula score con algoritmo seleccionado
+- Determina estado según UMBRAL
+- No realiza llamadas externas ni inserta datos
 
-**Body requerido:**
+**Body:**
 ```json
 {
-    "id": "MLA123456",
-    "title": "Celular Samsung Galaxy S23"
+    "text_1": "Smartphone Samsung Galaxy S23",
+    "text_2": "Celular Samsung S23"
 }
 ```
+
+**Query Parameters:**
+- `UMBRAL` (float): Umbral de positividad (default 0.5)
+- `method` (str): "levenshtein" | "sequencematcher" | "jaccard" | "cosine"
 
 **Respuesta (201 Created):**
 ```json
 {
-    "id": "MLA123456",
-    "title": "Celular Samsung Galaxy S23",
-    "message": "Item creado/actualizado correctamente."
-}
-```
-
-### POST /matches
-
-```python
-async def create_match_from_texts(match_data: MatchCreate)
-```
-
-**Propósito:** Comparar dos textos, calcular similitud y persistir match
-
-**Implementación esperada:**
-1. Calcular score de similitud entre text_1 y text_2 (ej: coseno, Levenshtein)
-2. Crear dos nuevos items en BD con títulos = textos proporcionados
-3. Crear nuevo match en tabla matches con IDs de items y score calculado
-4. Retornar match completo con IDs generados
-
-**Body requerido:**
-```json
-{
-    "text_1": "Smartphone de última generación",
-    "text_2": "Teléfono móvil avanzado"
-}
-```
-
-**Respuesta (201 Created):**
-```json
-{
-    "id": 1,
-    "id_item_1": "MLA_NEW_1",
-    "title_item_1": "Smartphone de última generación",
-    "id_item_2": "MLA_NEW_2",
-    "title_item_2": "Teléfono móvil avanzado",
-    "score": 0.88,
-    "status": "en progreso"
+    "id": 1707847514000,
+    "id_item_1": "MLA_TEXT_1707847514_1",
+    "title_item_1": "Smartphone Samsung Galaxy S23",
+    "id_item_2": "MLA_TEXT_1707847514_2",
+    "title_item_2": "Celular Samsung S23",
+    "score": 0.86957,
+    "status": "positivo"
 }
 ```
 
 ### POST /matches/compare-by-ids
-
 ```python
-async def compare_items_by_ids(compare_data: MatchCompare)
+async def compare_items_by_ids(
+    id_a: int,
+    id_b: int,
+    UMBRAL: float = 0.5,
+    db: Session = Depends(get_db)
+)
 ```
 
-**Propósito:** Comparar dos items existentes por sus IDs
+**Propósito:** Comparar dos items existentes en BD por IDs.
 
-**Lógica esperada:**
-1. Buscar match previo entre id_a e id_b
-2. Si existe y status="positivo" → Retornar sin cambios (evitar recálculo)
-3. Si existe otros status o no existe:
-     - Obtener titles de ambos items desde BD
-     - Recalcular score de similitud
-     - Actualizar o crear match con nuevo score
-4. Retornar match actualizado
+**Lógica:**
+- Busca match previo bidireccionally
+- Si positivo → Retorna sin recalcular
+- Si negativo/no existe → Recalcula y persiste
+- Usa algoritmo SequenceMatcher por defecto
 
-**Nota:** Evitar recálculo innecesario para matches confirmados (positivos)
-
-**Body requerido:**
-```json
-{
-    "id_a": "MLA123456",
-    "id_b": "MLA654321"
-}
-```
+**Query Parameters:**
+- `id_a` (int): ID primer item
+- `id_b` (int): ID segundo item
+- `UMBRAL` (float): Threshold de positividad
 
 **Respuesta (200 OK):**
 ```json
 {
-    "id": 2,
-    "id_item_1": "MLA123456",
-    "title_item_1": "Título del Item A",
-    "id_item_2": "MLA654321",
-    "title_item_2": "Título del Item B",
-    "score": 0.92,
-    "status": "positivo"
-}
-```
-
-### GET /matches/{match_id}
-
-```python
-async def get_match_by_id(match_id: int = Path(..., description="..."))
-```
-
-**Propósito:** Recuperar información completa de un match específico
-
-**Parámetros path:**
-- `match_id` (int): ID único del match a consultar (validado como int)
-
-**Implementación esperada:**
-1. Buscar match en tabla matches WHERE id = match_id
-2. Si no existe → HTTPException(404 Not Found)
-3. Si existe → Retornar objeto MatchResponse completo
-
-**Ejemplo:** `GET /matches/101`
-
-**Respuesta (200 OK):**
-```json
-{
-    "id": 101,
-    "id_item_1": "MLA123456",
-    "title_item_1": "Celular Samsung Galaxy S23",
-    "id_item_2": "MLA654321",
-    "title_item_2": "Samsung S23 128GB",
-    "score": 0.95,
-    "status": "positivo"
-}
-```
-
-**Error (404 Not Found):**
-```json
-{
-    "detail": "Match no encontrado."
+    "mensaje": {
+        "ids_consultados": [123, 456],
+        "match_encontrado": "Sí",
+        "estado_match_encontrado": "POSITIVO",
+        "accion_recomendada": "✅ MATCH POSITIVO ENCONTRADO..."
+    },
+    "resultado": {
+        "id_item_1": "123",
+        "title_item_1": "Celular Samsung Galaxy S23",
+        "id_item_2": "456",
+        "title_item_2": "Samsung S23 128GB",
+        "score": 0.92,
+        "status": "positivo",
+        "created_at": "2026-02-18T21:55:14.036671+00:00",
+        "updated_at": "2026-02-18T21:55:14.036671+00:00"
+    }
 }
 ```
 
 ### GET /tables/{table_name}/colnames
-
 ```python
-async def get_table_header(table_name: str, db: Session = Depends(get_db))
+async def get_table_header(
+    table_name: str,
+    db: Session = Depends(get_db)
+) -> TableHeaderResponse
 ```
 
-**Propósito:** Introspección de estructura de tabla (obtener nombres de columnas)
-
-**Parámetros path:**
-- `table_name` (str): Nombre de tabla a inspeccionar
+**Propósito:** Obtener nombres de columnas de tabla.
 
 **Implementación:**
-1. Crear inspector de metadatos: `inspector = inspect(engine)`
-2. Validar existencia: `inspector.has_table(table_name)`
-3. Si no existe → HTTPException(404) con detalle descriptivo
-4. Obtener columnas: `inspector.get_columns(table_name)`
-5. Extraer nombres: `[col['name'] for col in columns_metadata]`
-6. Retornar TableHeaderResponse(table_name, column_names)
-
-**Manejo de excepciones:**
-- HTTPException: Re-lanzar (errores controlados, ej: 404)
-- Exception general: Loguear y lanzar HTTPException(500)
+1. Crea inspector: `inspector = inspect(engine)`
+2. Valida existencia: `inspector.has_table(table_name)`
+3. Extrae nombres: `[col['name'] for col in columns]`
+4. Si no existe → HTTPException(404)
 
 **Ejemplo:** `GET /tables/items/colnames`
 
@@ -461,154 +388,151 @@ async def get_table_header(table_name: str, db: Session = Depends(get_db))
 ```json
 {
     "table_name": "items",
-    "columns": ["id", "title", "created_at", "updated_at"]
+    "columns": ["id", "id_item", "title", "created_at", "updated_at"]
 }
 ```
 
 **Error (404 Not Found):**
 ```json
 {
-    "detail": "La tabla 'items' no existe en el esquema actual de la SIC."
+    "detail": "La tabla 'items' no existe en el esquema actual"
 }
 ```
 
 ### GET /tables/{table_name}/header
+```python
+async def get_table_sample(
+    table_name: str = Path(...),
+    rows: int = Query(3, ge=1, le=100),
+    db: Session = Depends(get_db)
+) -> List[Dict[str, Any]]
+```
+
+**Propósito:** Obtener muestra de datos (primeras N filas) de tabla.
 
 **Parámetros:**
-- `table_name` (str): Nombre de tabla a samplear
-- `db` (Session): Sesión de BD activa (inyectado)
-
-**Propósito:** Obtener muestra de datos (primeras 3 filas) de tabla especificada
+- `table_name` (str): Nombre de tabla
+- `rows` (int): Número de filas a retornar (1-100, default 3)
 
 **Implementación:**
-1. Validar tabla: `inspector.has_table(table_name)`
-2. Si no existe → HTTPException(404)
-3. Ejecutar: `SELECT * FROM {table_name} LIMIT 3`
-4. Mapear resultados a diccionarios: `dict(row._mapping)`
-5. Retornar lista de dicts (serializable a JSON)
+1. Valida tabla con inspector
+2. Verifica columna `updated_at` para ordenamiento
+3. Ejecuta `SELECT * LIMIT :limit` con parámetros seguros
+4. Retorna lista de diccionarios (JSON)
 
-**Consideraciones de seguridad:**
-- Usar `text()` con parámetros es más seguro que f-string directo (SQL injection)
-- Limitado a 3 filas (evita transferencia de datos innecesaria)
-
-**Manejo de excepciones:**
-- HTTPException: Re-lanzar (errores esperados)
-- Exception general: Loguear y HTTPException(500)
-
-**Ejemplo:** `GET /tables/items/header`
+**Ejemplo:** `GET /tables/items/header?rows=5`
 
 **Respuesta (200 OK):**
 ```json
 [
     {
-        "id": "MLA123456",
+        "id": 1,
+        "id_item": "123456",
         "title": "Celular Samsung Galaxy S23",
-        "created_at": "2024-01-15"
+        "created_at": "2024-01-15T10:30:00",
+        "updated_at": "2024-01-15T10:30:00"
     },
     {
-        "id": "MLA654321",
+        "id": 2,
+        "id_item": "654321",
         "title": "Samsung S23 128GB",
-        "created_at": "2024-01-16"
-    },
-    {
-        "id": "MLA789012",
-        "title": "Galaxy S23 Ultra",
-        "created_at": "2024-01-17"
+        "created_at": "2024-01-16T15:20:00",
+        "updated_at": "2024-01-16T15:20:00"
     }
 ]
 ```
 
-**Error (500 Internal Server Error):**
+### POST /tables/add-items
+```python
+async def create_or_update_item(
+    item: ItemCreate,
+    db: Session = Depends(get_db)
+) -> ItemResponse
+```
+
+**Propósito:** Crear o actualizar item en tabla `items`.
+
+**Validaciones:**
+- Convierte ID string → int
+- Valida no-duplicados (evita repetidos)
+- Inserta o retorna error si existe
+
+**Body:**
 ```json
 {
-    "detail": "Fallo en la conexión con la base de datos institucional."
+    "id": 123456,
+    "title": "Celular Samsung Galaxy S23"
 }
 ```
 
-### POST /matches/backup-and-reset
-
-```python
-async def backup_and_reset_matches()
-```
-
-**Propósito:** Respaldar tabla matches y vaciarla (operación destructiva)
-
-**Implementación esperada:**
-1. Iniciar transacción explícita
-2. Copiar todo de matches → matches_backup (INSERT INTO ... SELECT *)
-3. Eliminar todo de matches (TRUNCATE TABLE matches)
-4. Hacer commit de transacción
-5. Retornar BackupResponse(message, records_moved=cantidad_movida)
-
-**Propiedades transaccionales (ACID):**
-- **Atomicidad:** Backup y reset se hacen juntos o ninguno
-- **Consistencia:** Si hay error, rollback automático
-- **Aislamiento:** Otros procesos ven snapshot consistente
-- **Durabilidad:** Datos en matches_backup persistidos en BD
-
-**Uso:** Limpiar tabla matches después de análisis/auditoría
-
-**⚠️ Advertencia:** Operación NO reversible (requiere restauración manual desde backup)
-
-**Respuesta (200 OK):**
+**Respuesta (201 Created):**
 ```json
 {
-    "message": "Backup completado y tabla 'matches' reseteada.",
-    "records_moved": 150
+    "id": 123456,
+    "title": "Celular Samsung Galaxy S23",
+    "message": "✅ Item insertado exitosamente: id=1, id_item=123456, title='Celular Samsung Galaxy S23'"
+}
+```
+
+**Error (400 Bad Request):**
+```json
+{
+    "detail": "El ID debe ser un número entero válido"
 }
 ```
 
 ---
 
-## Sección 7: Arquitectura y Patrones
+## Sección 10: Arquitectura y Patrones
 
-### Patrón MVC (Model-View-Controller)
+### Patrón MVC
+- **Model:** Schemas Pydantic (ItemCreate, MatchResponse)
+- **View:** Response JSON (FastAPI auto-serializa)
+- **Controller:** Funciones endpoint (@app.post, @app.get)
 
-- **Model:** Schemas Pydantic (ItemCreate, MatchResponse, etc)
-- **View:** Response models (JSON serialización automática)
-- **Controller:** Funciones de endpoints (@app.post, @app.get)
-
-### Inyección de Dependencias (FastAPI)
-
-- `get_db()` proporciona sesiones reutilizables vía `Depends()`
-- Desacoplamiento entre endpoints y gestión de BD
-- Cleanup automático (`close()`) al finalizar request
+### Inyección de Dependencias
+- `Depends(get_db)` proporciona sesiones reutilizables
+- Cleanup automático (`finally db.close()`)
+- Desacoplamiento BD↔lógica
 
 ### Validación en Capas
-
-1. **Capa 1:** Pydantic valida tipos y estructura (BaseModel)
-2. **Capa 2:** Path parameters validados (Path(...))
-3. **Capa 3:** Lógica de negocio (verificar uniqueness, relaciones, etc)
+1. **Pydantic:** Tipos y estructura
+2. **Path/Query:** Parámetros de ruta
+3. **Business Logic:** Verificación de relaciones, threshold, etc
 
 ### Seguridad
-
-- Clúster privado AKS para ejecución (no expuesto públicamente)
-- Variables de entorno para credenciales (DATABASE_URL)
-- SQL parameterizado (`text()`) contra SQL injection
+- Clúster AKS privado
+- Variables de entorno (DATABASE_URL)
+- SQL parametrizado con `text()`
 - Validación de entrada en todas las capas
+
+### Algoritmos NLP
+Soporte para 4 métodos de similitud con preprocesamiento:
+- **Levenshtein:** Distancia de edición
+- **SequenceMatcher:** Pattern matching (Gestalt)
+- **Jaccard:** Similitud de tokens
+- **Cosine:** Similitud vectorial (robusto para vocabulario distinto)
 
 ---
 
-## Sección 8: Notas de Implementación
+## Sección 11: Notas de Implementación
+
+### Cambios en v2.1.0
+1. **SimilarityService:** Clase con 4 algoritmos configurable
+2. **test_match_existence():** Función core robusta con lógica bidireccional
+3. **Multiple endpoints:** Comparación de textos y IDs separadas
+4. **Timestamps ISO 8601:** datetime en lugar de strings
+5. **Query parameters:** method y UMBRAL configurables
 
 ### Pendientes Técnicos
+- Logging estructurado (actualmente print)
+- Índices de BD en columnas de búsqueda
+- Caché de matches positivos
+- Rate limiting en endpoints de cálculo
 
-1. **Import no utilizado:** El import de `NoSuchTableError` no se utiliza actualmente
-     - → Considerar remover o usar explícitamente en try-except de métodos de BD
+### Mejoras Propuestas
+- Integración con API de Mercado Libre (MELI SDK)
+- Batch processing para múltiples comparaciones
+- Webhooks para notificaciones de matches
+- Métricas de precisión de algoritmos (precision/recall)
 
-2. **Lógica de negocio incompleta:** Marcada con TODO en el código
-     - → Cada endpoint tiene comentarios detallados de implementación pendiente
-
-3. **Mock data en respuestas:** Endpoints usan valores hardcoded
-     - → Al implementar, reemplazar con consultas reales a BD
-
-4. **Validación de relaciones:** No implementada
-     - → Agregar checks de existencia de items antes de crear matches
-
-### Mejoras de Código
-
-5. **Logging básico:** Actualmente usa print statements
-     - → Integrar con sistema de logging estructurado (logging module, Sentry)
-
-6. **Transacciones explícitas:** Solo mencionadas en backup endpoint
-     - → Considerar usar context managers de SQLAlchemy en otros endpoints
